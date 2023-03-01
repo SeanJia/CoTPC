@@ -30,7 +30,7 @@ def predict(model, action_hist, state_hist, t):
     m3 = m1 > m2
     m3 = m3[:, None, None, :].repeat(1, n_head, model.config.len_key_states, 1)
     mask[:, :, :model.config.len_key_states, :] = m3
-    preds, _ = model(states, timesteps, actions=actions, mask=mask)
+    preds, _ = model(states, timesteps, actions=actions, key_state_mask=key_state_mask)
     return preds[:, -1]  # Only output the action predictions.
 
 
