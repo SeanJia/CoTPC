@@ -174,8 +174,8 @@ class BlocksWithCoT(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-        self.block_list = [Block(config) for _ in range(config.n_layer)]
-        self.blocks = nn.Sequential(*self.block_list)  # To register this module.
+        # Register all the individual blocks.
+        self.block_list = nn.ModuleList(Block(config) for _ in range(config.n_layer))
         self.model_type = config.model_type
         self.n_head = config.n_head
         self.len_key_states = config.len_key_states
@@ -185,9 +185,10 @@ class BlocksWithCoT(nn.Module):
 
         # During training the `key_state_mask` is not specified and we apply random 
         # masking such that the first t tokens after the key state query tokens are 
-        # 0's and otherwise 1's, where t is uniformly sampled from 0 to traj length. 
+        # 0's and otherwise 1's, where t is uniformly sampled from 0 to traj length.
+        # Here 1's mean no attention over the underlying masked tokens. 
+        # During inference, the evaluator should specify key state masks.
         if key_state_mask is None:
-
             # If use both state and action history, 
             # make sure masks for s and a has the same length.
             if '+a' in self.model_type:
@@ -195,14 +196,10 @@ class BlocksWithCoT(nn.Module):
             else:
                 r = torch.randint(0, T - self.len_key_states, [B])[:, None]
             mask = torch.arange(0, T).repeat(B, 1) > r + self.len_key_states
-            random_mask = torch.zeros(B, self.n_head, T, T, dtype=bool)
-            random_mask[:, :, :self.len_key_states, :] = \
+            key_state_mask = torch.zeros(
+                [B, self.n_head, T, T], dtype=bool, device=x.device)
+            key_state_mask[:, :, :self.len_key_states, :] = \
                 mask[:, None, None, :].repeat(1, self.n_head, self.len_key_states, 1)
-            key_state_mask = random_mask.cuda()
-        
-        # During inference, the evaluator should specify key state masks.
-        else:
-            key_state_mask = key_state_mask.cuda()
         
         output = []  # Also keep the intermediate results.
         for block in self.block_list:
@@ -262,10 +259,12 @@ class GPTWithCoT(nn.Module):
         # Key state predictors. By default, we only use one predictor which takes 
         # features from one attention layer.
         if 'cot' in self.model_type:
-            self.key_state_predictors = []
+            key_state_predictors = []
             for _ in self.key_state_loss:
-                self.key_state_predictors.append(
-                    MLP(config.n_embd, self.state_dim, hidden_dims=[256]).cuda())
+                key_state_predictors.append(
+                    MLP(config.n_embd, self.state_dim, hidden_dims=[256]))
+            # Register all the key state predictors.
+            self.key_state_predictors = nn.ModuleList(key_state_predictors)  
 
         self.apply(self._init_weights)
         print(f"Total # of parameters: {sum(p.numel() for p in self.parameters())}")
@@ -288,28 +287,20 @@ class GPTWithCoT(nn.Module):
         state_embeddings = self.state_encoder(states)
 
         # Embeddings for state (action, and key state query) tokens.
-        token_embeddings = torch.zeros((B, self.block_size, self.config.n_embd), 
-                                       dtype=torch.float32, device=state_embeddings.device)
+        token_embeddings = torch.zeros([B, self.block_size, self.config.n_embd], 
+                                       dtype=torch.float32, device=states.device)
         
-        # If using actino history as inputs: during training, all actions are
+        # If using action history as inputs: during training, all actions are
         # specified; during inference, only actions in the past are specified.
         # That is, the first action prediction has no action history as inputs. 
         if '+a' in self.model_type: 
-            token_embeddings[:,:state_embeddings.shape[1]*2:2,:] = state_embeddings
+            token_embeddings[:,:T*2:2,:] = state_embeddings
             if actions is not None: 
-#                 # The last action is not used as inputs.
-#                 token_embeddings[:,1:state_embeddings.shape[1]*2-1:2,:] = \
-#                     self.action_encoder(actions[:,:T-1])    
-                action_embeddings = self.action_encoder(actions)
-                if action_embeddings.shape[1] == state_embeddings.shape[1] - 1: 
-                    token_embeddings[  # Eval mode.
-                        :,1:state_embeddings.shape[1]*2-1:2,:] = action_embeddings          
-                else:
-                    token_embeddings[
-                        :,1:state_embeddings.shape[1]*2:2,:] = action_embeddings  
+                # Assume the last action is not used as inputs during training.
+                token_embeddings[:,1:T*2-1:2,:] = self.action_encoder(actions[:,:T-1])            
                     
         else:
-            token_embeddings = state_embeddings
+            token_embeddings[:,:T,:] = state_embeddings
 
         # Set up position embeddings similar to that in Decision Transformer.
         global_pos_emb = torch.repeat_interleave(self.global_pos_emb, B, dim=0)
@@ -400,19 +391,3 @@ class GPTWithCoT(nn.Module):
         optimizer = torch.optim.AdamW(
             optim_groups, lr=train_config.learning_rate, betas=train_config.betas)
         return optimizer
-    
-
-# from data import MS2_MP_Traj_Dataset
-
-# dataset = MS2_MP_Traj_Dataset(
-#     control_mode='pd_joint_delta_pos', length=10, seed=0,
-#     min_traj_length=50, max_traj_length=BLOCK_SIZE)
-#     # rew_thresh='<0.5', rew_filter_delay=1)
-#     # override_traj_path=args.override_traj_path)
-
-# # print(len(dataset))
-# print(dataset.max_steps)
-# d = next(iter(data_loader))
-# # d = next(iter(dataset))
-# print(d['s'].shape, d['a'].shape, d['timesteps'].shape, d['lengths'])
-# # exit()

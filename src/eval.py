@@ -9,7 +9,7 @@ from model import GPTConfig, GPTWithCoT
 
 @torch.no_grad()
 def predict(model, action_hist, state_hist, t):
-    # Please change this function for model_type other than `s+a+cot`.
+    # Please modify this function for model_type other than `s+a+cot`.
     assert model.model_type == 's+a+cot'  
 
     timesteps = torch.from_numpy(t)[:, None].cuda()
@@ -19,18 +19,20 @@ def predict(model, action_hist, state_hist, t):
         actions = torch.stack(action_hist, 1).float().cuda()
     states = torch.stack(state_hist, 1).float().cuda()
 
-    B, T = states.shape[0], model.block_size + model.config.len_key_states
-    n_head, s = model.config.n_head, states.shape[1]
+    # T is the max sequence size; S is the current number of steps.
+    B, T = states.shape[0], model.block_size + model.len_key_states
+    n_head, S = model.config.n_head, states.shape[1] - 1  # Exclude the init state.
     
-    # Masks for the tokens in attention layers, including causal (auto-regressive) 
-    # tokens and the all-to-all (key state query) tokens. 
-    mask = torch.zeros(B, n_head, T, T, dtype=bool)
+    # Masks for the all-to-all key state query tokens in attention layers.
+    # The built-in masks for causal (auto-regressive) tokens are in `model.py`.
+    key_state_mask = torch.zeros([B, n_head, T, T], dtype=bool)
     m1 = torch.arange(0, T).repeat(B, 1)
-    m2 = torch.ones([B, 1]) * ((s - 1) * 2 + model.config.len_key_states)
-    m3 = m1 > m2
-    m3 = m3[:, None, None, :].repeat(1, n_head, model.config.len_key_states, 1)
-    mask[:, :, :model.config.len_key_states, :] = m3
-    preds, _ = model(states, timesteps, actions=actions, key_state_mask=key_state_mask)
+    m2 = torch.ones([B, 1]) * (S * 2 + model.len_key_states)
+    m3 = m1 > m2  # Tokens in the future are masked out.
+    m3 = m3[:, None, None, :].repeat(1, n_head, model.len_key_states, 1)
+    key_state_mask[:, :, :model.len_key_states, :] = m3
+    preds, _ = model(
+        states, timesteps, actions=actions, key_state_mask=key_state_mask)
     return preds[:, -1]  # Only output the action predictions.
 
 
