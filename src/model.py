@@ -290,16 +290,24 @@ class GPTWithCoT(nn.Module):
         # Embeddings for state (action, and key state query) tokens.
         token_embeddings = torch.zeros((B, self.block_size, self.config.n_embd), 
                                        dtype=torch.float32, device=state_embeddings.device)
-        assert self.block_size == T*2 #?????
-
+        
         # If using actino history as inputs: during training, all actions are
         # specified; during inference, only actions in the past are specified.
         # That is, the first action prediction has no action history as inputs. 
         if '+a' in self.model_type: 
-            token_embeddings[:,::2,:] = state_embeddings
+            token_embeddings[:,:state_embeddings.shape[1]*2:2,:] = state_embeddings
             if actions is not None: 
-                # The last action is not used as inputs.
-                token_embeddings[:,1:-1:2,:] = self.action_encoder(actions[:,:T-1])            
+#                 # The last action is not used as inputs.
+#                 token_embeddings[:,1:state_embeddings.shape[1]*2-1:2,:] = \
+#                     self.action_encoder(actions[:,:T-1])    
+                action_embeddings = self.action_encoder(actions)
+                if action_embeddings.shape[1] == state_embeddings.shape[1] - 1: 
+                    token_embeddings[  # Eval mode.
+                        :,1:state_embeddings.shape[1]*2-1:2,:] = action_embeddings          
+                else:
+                    token_embeddings[
+                        :,1:state_embeddings.shape[1]*2:2,:] = action_embeddings  
+                    
         else:
             token_embeddings = state_embeddings
 
