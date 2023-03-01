@@ -39,10 +39,9 @@ def update(model, action_hist, state_hist, actions, states, t):
     # Please change this function for model_type other than `s+a+cot`.
     assert model.model_type == 's+a+cot'  
 
-    block_size = model.get_block_size()
     actions = torch.from_numpy(actions)
-    if len(state_hist) == block_size // 2:  # The context buffer is full.
-        assert len(action_hist) == block_size // 2 - 1
+    if len(state_hist) == model.block_size // 2:  # The context buffer is full.
+        assert len(action_hist) == model.block_size // 2 - 1
         state_hist = state_hist[1:] + [states]
         action_hist = action_hist[1:] + [actions]
         t += 1
