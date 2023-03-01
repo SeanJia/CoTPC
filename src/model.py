@@ -367,7 +367,7 @@ class GPTWithCoT(nn.Module):
                     no_decay.add(fpn)
 
         # special case the position embedding parameter in the root GPT module as not decayed
-        no_decay.add('localpos_emb')
+        no_decay.add('local_pos_emb')
         no_decay.add('global_pos_emb')
         if 'cot' in self.model_type:
             no_decay.add('key_state_pos_emb')
