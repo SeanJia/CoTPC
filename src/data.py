@@ -36,7 +36,11 @@ class MS2Demos(Dataset):
             f'{task}/trajectory.{state_mode}.{control_mode}.h5')
         print('Traj path:', traj_path)
         self.data = self.load_demo_dataset(traj_path, length, multiplier)
-    
+
+        # Cache key states for faster data loading.
+        if self.with_key_states:
+            self.idx_to_key_states = dict()
+
     def __len__(self):
         return len(self.data['env_states'])
 
@@ -72,7 +76,9 @@ class MS2Demos(Dataset):
             # 'env_states': self.data['env_states'][index][s_idx:e_idx].astype(np.float32),
         }     
         if self.with_key_states:
-            data_dict['k'] = self.get_key_states(index)
+            if f'key_states_{index}' not in self.idx_to_key_states:
+                self.idx_to_key_states[f'key_states_{index}']  = self.get_key_states(index)
+            data_dict['k'] = self.idx_to_key_states[f'key_states_{index}']
         return data_dict
 
     def info(self):  # Get observation and action shapes.

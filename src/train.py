@@ -6,7 +6,6 @@ from itertools import cycle
 import torch
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data import DataLoader
-import torch.optim as optim
 import torch.nn.functional as F
 
 from collections import deque
@@ -76,6 +75,10 @@ def parse_args():
     parser.add_argument("--n_head", default=8, type=int, help="Number of attention heads.")
     parser.add_argument("--n_embd", default=128, type=int, help="Hidden feature dimension.")
 
+    # For faster data loader.
+    parser.add_argument("--num_workers", default=0, type=int, 
+                        help="Use positive number for async data loading.")
+
     return parser.parse_args()
 
 
@@ -131,7 +134,10 @@ if __name__ == "__main__":
         dataset=train_dataset, 
         batch_size=args.batch_size, 
         shuffle=True, 
-        collate_fn=collate_fn)
+        pin_memory=True,  # Faster data loading if using GPU.
+        num_workers=args.num_workers,
+        collate_fn=collate_fn
+    )
     data_iter = iter(cycle(train_data))  # Infinite loop.
 
     state_dim, action_dim = train_dataset.info()
