@@ -26,7 +26,10 @@ def parse_args():
     parser.add_argument("--n_iters", default=1_600_000, type=int, help="Number of training iterations.")
     parser.add_argument("--batch_size", default=256, type=int, help="Batch size.")
     parser.add_argument("--init_lr", default='5e-4', type=str, help="The initial learning rate.")
-    
+    parser.add_argument("--weight_decay", default='0', type=str, help="Weight decay coefficient.")
+    parser.add_argument("--beta1", default='0.9', type=str, help="Beta1 in the Adam optimizer.")
+    parser.add_argument("--beta2", default='0.999', type=str, help="Beta2 in the Adam optimizer.")
+
     # Hyper-parameters regarding CoTPC. 
     parser.add_argument("--key_state_coeff", default=0.0, type=float, 
                         help="Coefficient for the key state prediction loss.")
@@ -134,7 +137,12 @@ if __name__ == "__main__":
         max_timestep=train_dataset.max_steps
     )
     model = GPTWithCoT(conf, state_dim=state_dim, action_dim=action_dim).cuda()
-    optimizer = optim.Adam(model.parameters(), lr=float(args.init_lr))
+    optimizer = model.configure_adamw_optimizers({
+        'init_lr': float(args.init_lr),
+        'weight_decay': float(args.weight_decay),
+        'beta1': float(args.beta1),
+        'beta2': float(args.beta2),
+    })
     scheduler = torch.optim.lr_scheduler.MultiStepLR(
         optimizer, milestones=[60000], gamma=0.1)  # This requires more tuning.
     

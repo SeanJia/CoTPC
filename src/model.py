@@ -338,7 +338,7 @@ class GPTWithCoT(nn.Module):
 
         return act_preds, key_state_preds 
 
-    def configure_optimizers(self, train_config):
+    def configure_adamw_optimizers(self, config):
         """
         This long function is unfortunately doing something very simple and is being very defensive:
         We are separating out all parameters of the model into two buckets: those that will experience
@@ -352,7 +352,7 @@ class GPTWithCoT(nn.Module):
         whitelist_weight_modules = (torch.nn.Linear, torch.nn.Conv2d)
         blacklist_weight_modules = (torch.nn.LayerNorm, torch.nn.Embedding)
         for mn, m in self.named_modules():
-            for pn, p in m.named_parameters():
+            for pn, _ in m.named_parameters():
                 fpn = '%s.%s' % (mn, pn) if mn else pn # full param name
 
                 if pn.endswith('bias'):
@@ -384,10 +384,13 @@ class GPTWithCoT(nn.Module):
         # create the pytorch optimizer object
         optim_groups = [
             {"params": [param_dict[pn] for pn in sorted(list(decay))],
-             "weight_decay": train_config.weight_decay},
+             "weight_decay": config['weight_decay']},
             {"params": [param_dict[pn] for pn in sorted(list(no_decay))], 
              "weight_decay": 0.0},
         ]
         optimizer = torch.optim.AdamW(
-            optim_groups, lr=train_config.learning_rate, betas=train_config.betas)
+            optim_groups, 
+            lr=config['init_lr'], 
+            betas=(config['beta1'], config['beta2'])
+        )
         return optimizer
