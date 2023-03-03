@@ -1,4 +1,5 @@
 import os
+import copy
 import argparse
 from itertools import cycle
 
@@ -14,6 +15,14 @@ import numpy as np
 
 from data import MS2Demos, get_padding_fn
 from model import GPTConfig, GPTWithCoT
+
+try:
+    import wandb
+    USE_WANDB = True
+    PROJECT_NAME = ''  # Please specify the project name.
+except ImportError:
+    print('Do not use wandb since it is not found.')
+    USE_WANDB = False
 
 # Please specify the model path (base folder).
 MODEL_PATH = '/home/zjia/Research/inter_seq/models'
@@ -60,7 +69,7 @@ def parse_args():
 
     # Save and log frequencies.
     parser.add_argument("--save_every", default=40000, type=int, help="Save model every # iters.")
-    parser.add_argument("--log_every", default=4000, type=int, help="log metrics every # iters.")
+    parser.add_argument("--log_every", default=2000, type=int, help="log metrics every # iters.")
     
     # General hyper-parameters for the GPT architecture.
     parser.add_argument("--n_layer", default=4, type=int, help="Number of attention layers.")
@@ -160,6 +169,12 @@ if __name__ == "__main__":
         print(f'Pretrained model loaded from {path}.')
 
     log_path = os.path.join(model_path, 'log.txt')
+    if USE_WANDB:
+        wandb.init(
+            project=PROJECT_NAME, name=args.model_name, config=vars(args),
+            config_exclude_keys=['model_name', 'save_every', 'log_every'],
+        )
+ 
     losses_act_pred = deque(maxlen=1000)
     losses_key_states = deque(maxlen=1000)
  
@@ -205,6 +220,12 @@ if __name__ == "__main__":
                 avg_loss_key_states = np.mean(losses_key_states)
                 print(f'Iteration {idx}: {avg_loss_act_pred}, {avg_loss_key_states}')
                 f.write(f'{idx},{avg_loss_act_pred},{avg_loss_key_states}\n')
+                if USE_WANDB: wandb.log({
+                        "loss_actions": avg_loss_act_pred, 
+                        "loss_key_states": avg_loss_key_states,
+                        "loss_sum": avg_loss_act_pred + avg_loss_key_states,
+                        "n_iter": idx,
+                    })
 
         if idx > 0 and idx % args.save_every == 0:
             save_path = os.path.join(model_path, f'{idx}.pth')
