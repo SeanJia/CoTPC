@@ -16,6 +16,9 @@ from data import MS2Demos, get_padding_fn
 from model import GPTConfig, GPTWithCoT
 
 try:
+    # Use might need this for wandb to work due to protobuf issues.
+    os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
+
     import wandb
     USE_WANDB = True
     PROJECT_NAME = ''  # Please specify the project name.

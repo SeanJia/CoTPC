@@ -20,8 +20,7 @@ class MS2Demos(Dataset):
             min_seq_length=None,
             max_seq_length=None,
             with_key_states=False,
-            seed=None,
-            multiplier=20):  # Used to duplicate data for faster data loading.
+            seed=None):  # seed for train/test spliting.
         super().__init__()
         self.task = task
         self.data_split = data_split
@@ -35,7 +34,7 @@ class MS2Demos(Dataset):
         traj_path = os.path.join(DATA_PATH, 
             f'{task}/trajectory.{state_mode}.{control_mode}.h5')
         print('Traj path:', traj_path)
-        self.data = self.load_demo_dataset(traj_path, length, multiplier)
+        self.data = self.load_demo_dataset(traj_path, length)
 
         # Cache key states for faster data loading.
         if self.with_key_states:
@@ -45,7 +44,8 @@ class MS2Demos(Dataset):
         return len(self.data['env_states'])
 
     def __getitem__(self, index):
-        l = len(self.data['obs'][index])
+        # Offset by one since the last obs does not have a corresponding action.
+        l = len(self.data['obs'][index]) - 1 
 
         # Sample starting and ending index given the min and max traj length.
         if self.min_seq_length is None and self.max_seq_length is None:
@@ -84,9 +84,7 @@ class MS2Demos(Dataset):
     def info(self):  # Get observation and action shapes.
         return self.data['obs'][0].shape[-1], self.data['actions'][0].shape[-1]
 
-    def load_demo_dataset(self, path, length, multiplier):  
-        # Multiplier is used to make this dataset larger by duplicing the data so that
-        # sampling might be more efficient during training.
+    def load_demo_dataset(self, path, length):  
         dataset = {}
         traj_all = h5py.File(path)
         if length == -1:
@@ -105,66 +103,71 @@ class MS2Demos(Dataset):
         else:
             ids = np.random.permutation(len(traj_all))[:length]
 
+        # Note that the size of `env_states` and `obs` is that of the others + 1.
+        # And the `infos` is for the next obs rather than the current obs.
+
+        # `env_states` is used for reseting the env (might be helpful for eval)
         dataset['env_states'] = [np.array(
-            traj_all[f"traj_{i}"]['env_states'])[:-1] for i in ids] * multiplier
-        dataset['obs'] = [np.array(
-            traj_all[f"traj_{i}"]["obs"])[:-1] for i in ids] * multiplier
-        dataset['actions'] = [np.array(
-            traj_all[f"traj_{i}"]["actions"]) for i in ids] * multiplier
-        dataset['rewards'] = [np.array(
-            traj_all[f"traj_{i}"]["rewards"]) for i in ids] * multiplier 
-        dataset['infos'] = [np.array(
-            traj_all[f"traj_{i}"]["infos"]) for i in ids] * multiplier 
+            traj_all[f"traj_{i}"]['env_states']) for i in ids]
+        # `obs` is the observation of each step.
+        dataset['obs'] = [np.array(traj_all[f"traj_{i}"]["obs"]) for i in ids]
+        dataset['actions'] = [np.array(traj_all[f"traj_{i}"]["actions"]) for i in ids]
+        # `rewards` is not currently used in CoTPC training.
+        dataset['rewards'] = [np.array(traj_all[f"traj_{i}"]["rewards"]) for i in ids] 
+        for k in traj_all['traj_0']['infos'].keys():
+            dataset[f'infos/{k}'] = [np.array(
+                traj_all[f"traj_{i}"]["infos"][k]) for i in ids] 
+
         self.max_steps = np.max([len(s) for s in dataset['env_states']])
         
         return dataset
 
     def get_key_states(self, idx):
+        # Note that `infos` is for the next obs rather than the current obs.
+        # Thus, we need to offset the `step_idx`` by one.
         key_states = []
 
         # If TurnFaucet (two key states)
-        # info = [halfway, is_contacted, success]
         # key state I: is_contacted -> true
         # key state II: end of the trajectory
         if self.task == 'TurnFaucet-v0':
-            for step_idx, info in enumerate(self.data['infos'][idx]):
-                if info[1]: break
-            key_states.append(self.data['obs'][idx][step_idx].astype(np.float32))
+            for step_idx, key in enumerate(self.data['infos/is_contacted'][idx]):
+                if key: break
+            key_states.append(self.data['obs'][idx][step_idx+1].astype(np.float32))
 
         # If PegInsertion (three key states)
-        # info = [is_grasped, pre_inserted, success]
         # key state I: is_grasped -> true
         # key state II: pre_inserted -> true
         # key state III: end of the trajectory
         if self.task == 'PegInsertionSide-v0':
-            for step_idx, info in enumerate(self.data['infos'][idx]):
-                if info[0]: break
-            key_states.append(self.data['obs'][idx][step_idx].astype(np.float32))
-            for step_idx, info in enumerate(self.data['infos'][idx]):
-                if info[1]: break
-            key_states.append(self.data['obs'][idx][step_idx].astype(np.float32))
+            for step_idx, key in enumerate(self.data['infos/is_grasped'][idx]):
+                if key: break
+            key_states.append(self.data['obs'][idx][step_idx+1].astype(np.float32))
+            for step_idx, key in enumerate(self.data['infos/pre_inserted'][idx]):
+                if key: break
+            key_states.append(self.data['obs'][idx][step_idx+1].astype(np.float32))
         
         # If PickCube (two key states)
-        # info = [is_grasped, is_obj_placed, is_robot_static, success]
         # key state I: is_grasped -> true
         # key state II: end of the trajectory
         if self.task == 'PickCube-v0':
-            for step_idx, info in enumerate(self.data['infos'][idx]):
-                if info[0]: break
-            key_states.append(self.data['obs'][idx][step_idx].astype(np.float32))
+            for step_idx, key in enumerate(self.data['infos/is_grasped'][idx]):
+                if key: break
+            key_states.append(self.data['obs'][idx][step_idx+1].astype(np.float32))
         
         # If StackCube (three key states)
-        # info = [is_cubaA_grasped, is_cubeA_on_cubeB, is_cubeA_static, success]
         # key state I: is_cubaA_grasped -> true
-        # key state II: is_cubeA_on_cubeB -> true right before is_cubaA_grasped -> false
+        # key state II: the last state of is_cubeA_on_cubeB -> true 
+        #               right before is_cubaA_grasped -> false
         # key state III: end of the trajectory
         if self.task == 'StackCube-v0':
-            for step_idx, info in enumerate(self.data['infos'][idx]):
-                if info[0]: break
-            key_states.append(self.data['obs'][idx][step_idx].astype(np.float32))
-            for step_idx, info in enumerate(self.data['infos'][idx]):
-                if info[1] and not info[0]: break
-            step_idx = step_idx - 1  # Right before such a state
+            for step_idx, key in enumerate(self.data['infos/is_cubaA_grasped'][idx]):
+                if key: break
+            key_states.append(self.data['obs'][idx][step_idx+1].astype(np.float32))
+            for step_idx, k1 in enumerate(self.data['infos/is_cubeA_on_cubeB'][idx]):
+                k2 = self.data['infos/is_cubaA_grasped'][idx][step_idx]
+                if k1 and not k2: break
+            # Right before such a state and so we do not use step_idx+1.
             key_states.append(self.data['obs'][idx][step_idx].astype(np.float32))
 
         # Always append the last state in the trajectory as the last key state.
