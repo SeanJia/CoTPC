@@ -20,7 +20,8 @@ class MS2Demos(Dataset):
             min_seq_length=None,
             max_seq_length=None,
             with_key_states=False,
-            seed=None):  # seed for train/test spliting.
+            seed=None, # seed for train/test spliting.
+            duplicate=100):  # For faster data loading.  
         super().__init__()
         self.task = task
         self.data_split = data_split
@@ -34,7 +35,7 @@ class MS2Demos(Dataset):
         traj_path = os.path.join(DATA_PATH, 
             f'{task}/trajectory.{obs_mode}.{control_mode}.h5')
         print('Traj path:', traj_path)
-        self.data = self.load_demo_dataset(traj_path, length)
+        self.data = self.load_demo_dataset(traj_path, length, duplicate)
 
         # Cache key states for faster data loading.
         if self.with_key_states:
@@ -84,7 +85,7 @@ class MS2Demos(Dataset):
     def info(self):  # Get observation and action shapes.
         return self.data['obs'][0].shape[-1], self.data['actions'][0].shape[-1]
 
-    def load_demo_dataset(self, path, length):  
+    def load_demo_dataset(self, path, length, duplicate):  
         dataset = {}
         traj_all = h5py.File(path)
         if length == -1:
@@ -105,6 +106,10 @@ class MS2Demos(Dataset):
 
         # Note that the size of `env_states` and `obs` is that of the others + 1.
         # And the `infos` is for the next obs rather than the current obs.
+
+        # Duplicate the dataset for faster data loading.
+        # In Pytorch, each initialization of the data loader have some overhead.
+        ids = ids.tolist() * duplicate
 
         # `env_states` is used for reseting the env (might be helpful for eval)
         dataset['env_states'] = [np.array(

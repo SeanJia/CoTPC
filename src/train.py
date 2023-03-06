@@ -1,7 +1,5 @@
 import os
-import copy
 import argparse
-from itertools import cycle
 
 import torch
 from torch.utils.data.dataloader import DataLoader
