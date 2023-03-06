@@ -334,7 +334,8 @@ class GPTWithCoT(nn.Module):
 
         # Get rid of dims for action tokens. 
         if '+a' in self.model_type:
-            act_preds = act_preds[:,::2]
+            # Remove the extra tokens when in eval mode.
+            act_preds = act_preds[:,:T*2:2]
 
         return act_preds, key_state_preds 
 
