@@ -21,13 +21,13 @@ try:
 
     import wandb
     USE_WANDB = True
-    PROJECT_NAME = ''  # Please specify the project name.
+    PROJECT_NAME = 'CoTPC'  # Please specify the project name.
 except ImportError:
     print('Do not use wandb since it is not found.')
     USE_WANDB = False
 
 # Please specify the model path (base folder).
-MODEL_PATH = '/home/zjia/Research/inter_seq/models'
+MODEL_PATH = '/home/zjia/Research/inter_seq/CoTPC/models'
 
 
 def parse_args():
@@ -40,6 +40,7 @@ def parse_args():
     parser.add_argument("--weight_decay", default='0', type=str, help="Weight decay coefficient.")
     parser.add_argument("--beta1", default='0.9', type=str, help="Beta1 in the Adam optimizer.")
     parser.add_argument("--beta2", default='0.999', type=str, help="Beta2 in the Adam optimizer.")
+    parser.add_argument("--dropout", default='0.0', type=str, help="Dropout probability.")
 
     # Hyper-parameters regarding CoTPC. 
     parser.add_argument("--key_state_coeff", default=0.0, type=float, 
@@ -61,6 +62,8 @@ def parse_args():
     parser.add_argument('--task', type=str, default='PickCube-v0', help="Task (env-id) in ManiSkill2.")
     parser.add_argument('--control_mode', type=str, default='pd_joint_delta_pos', 
                         help="Control mode used in envs from ManiSkill2.")
+    parser.add_argument('--obs_mode', type=str, default='state', 
+                        help="State mode used in envs from ManiSkill2.")
     parser.add_argument("--seed", default=0, type=int,help="Random seed for data spliting.")
     parser.add_argument("--num_traj", default=-1, type=int, help="Number of training trajectories.")
     parser.add_argument('--context_length', type=int, default=60, 
@@ -123,6 +126,7 @@ if __name__ == "__main__":
 
     train_dataset = MS2Demos(
         control_mode=args.control_mode, 
+        obs_mode=args.obs_mode,
         length=args.num_traj, seed=args.seed,
         min_seq_length=args.min_seq_length, 
         max_seq_length=args.context_length,
@@ -139,9 +143,10 @@ if __name__ == "__main__":
         shuffle=True, 
         pin_memory=True,  # Faster data loading if using GPU.
         num_workers=args.num_workers,
-        collate_fn=collate_fn
+        collate_fn=collate_fn,
+        drop_last=True,
     )
-    data_iter = iter(cycle(train_data))  # Infinite loop.
+    data_iter = iter(train_data)
 
     state_dim, action_dim = train_dataset.info()
     conf = GPTConfig(
@@ -152,7 +157,10 @@ if __name__ == "__main__":
         model_type=args.model_type, 
         key_states=args.key_states,
         key_state_loss=args.key_state_loss,
-        max_timestep=train_dataset.max_steps
+        max_timestep=train_dataset.max_steps,
+        embd_pdrop=float(args.dropout),
+        resid_pdrop=float(args.dropout),
+        attn_pdrop=float(args.dropout),
     )
     model = GPTWithCoT(conf, state_dim=state_dim, action_dim=action_dim).cuda()
     optimizer = model.configure_adamw_optimizers({
@@ -162,7 +170,7 @@ if __name__ == "__main__":
         'beta2': float(args.beta2),
     })
     scheduler = torch.optim.lr_scheduler.MultiStepLR(
-        optimizer, milestones=[60000], gamma=0.1)  # This requires more tuning.
+        optimizer, milestones=[78000], gamma=0.1)  # This requires more tuning.
     
     model_path = os.path.join(MODEL_PATH, args.model_name)
     os.makedirs(model_path, exist_ok=True)
@@ -180,7 +188,7 @@ if __name__ == "__main__":
     log_path = os.path.join(model_path, 'log.txt')
     if USE_WANDB:
         wandb.init(
-            project=PROJECT_NAME, name=args.model_name, config=vars(args),
+            project=PROJECT_NAME, name=args.model_name, config=args,
             config_exclude_keys=['model_name', 'save_every', 'log_every'],
         )
  
@@ -198,8 +206,12 @@ if __name__ == "__main__":
             scheduler.step()  
             continue
 
-        # Obtain the current mini-batch.
-        batch = next(data_iter) 
+        # Obtain the current mini-batch (an infinite loop).
+        try:
+            batch = next(data_iter) 
+        except StopIteration:
+            data_iter = iter(train_data)
+            batch = next(data_iter)
         batch = {k: v.cuda() for k, v in batch.items()}
                         
         # Forward pass.

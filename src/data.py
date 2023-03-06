@@ -14,7 +14,7 @@ class MS2Demos(Dataset):
     def __init__(self, 
             data_split='train', 
             task='PickCube-v0', 
-            state_mode='state', 
+            obs_mode='state', 
             control_mode='pd_joint_delta_pos',
             length=-1,
             min_seq_length=None,
@@ -32,7 +32,7 @@ class MS2Demos(Dataset):
         # Usually set min and max traj length to be the same value.
         self.max_steps = -1  # Maximum timesteps across all trajectories.
         traj_path = os.path.join(DATA_PATH, 
-            f'{task}/trajectory.{state_mode}.{control_mode}.h5')
+            f'{task}/trajectory.{obs_mode}.{control_mode}.h5')
         print('Traj path:', traj_path)
         self.data = self.load_demo_dataset(traj_path, length)
 
