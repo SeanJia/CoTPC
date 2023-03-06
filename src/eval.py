@@ -172,10 +172,18 @@ if __name__ == "__main__":
             
             # Update metrics.
             for i, info in enumerate(infos):
-                j = start_idx + i            
-                if args.task == 'StackCube-v0':
-                    metric_dict['is_cubaA_grasped'][j].append(info['is_cubaA_grasped'])
-                    metric_dict['is_cubeA_on_cubeB'][j].append(info['is_cubeA_on_cubeB'])
+                j = start_idx + i   
+                # You might want to use these additional metrics.         
+                # if args.task == 'PickCube-v0':
+                #     metric_dict['is_grasped'][j].append(info['is_grasped'])
+                # if args.task == 'StackCube-v0':
+                #     metric_dict['is_cubaA_grasped'][j].append(info['is_cubaA_grasped'])
+                #     metric_dict['is_cubeA_on_cubeB'][j].append(info['is_cubeA_on_cubeB'])
+                # if args.task == 'PegInsertionSide-v0':
+                #     metric_dict['is_grasped'][j].append(info['is_grasped'])
+                #     metric_dict['pre_inserted'][j].append(info['pre_inserted'])
+                # if args.task == 'TurnFaucet-v0':
+                #     metric_dict['is_contacted'][j].append(info['is_contacted'])
                 metric_dict['success'][j].append(info['success'])
             
     output_str = ''
