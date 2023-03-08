@@ -248,7 +248,8 @@ if __name__ == "__main__":
 
         if idx > 0 and idx % args.save_every == 0:
             save_path = os.path.join(model_path, f'{idx}.pth')
-            torch.save(model.state_dict(), save_path) 
+            torch.save(dict(
+                model=model.state_dict(), metadata=vars(args)), save_path) 
     
         # Update learning rate.
         scheduler.step()

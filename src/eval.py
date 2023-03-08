@@ -9,7 +9,7 @@ from collections import defaultdict
 from mani_skill2.utils.io_utils import load_json
 
 import mani_skill2.envs  # To load ManiSkill2 envs.
-from model_bak import GPTConfig, GPTWithCoT
+from model import GPTConfig, GPTWithCoT
 
 from vec_env import get_mp_envs  # Used for parallel evaluation.
 
@@ -90,12 +90,8 @@ def parse_args():
     parser.add_argument("--key_state_loss", default='', type=str, 
                         help="Features out of what attention layers to use for key state prediction " +
                         "losses (see GPTConfig for the spec. format).")
-    parser.add_argument("--max_steps", default=-1, type=int, 
-                        help="Max steps of seqences in training data (for loading the pos enbedding).")
     parser.add_argument("--model_name", default='', type=str, help="Model name to be loaded.")
     parser.add_argument("--from_ckpt", default=-1, type=int, help="Ckpt of the model to be loaded.")
-    parser.add_argument("--state_dim", default=-1, type=int, help="Dim of the state space.")
-    parser.add_argument("--action_dim", default=8, type=int, help="Dim of the action space.")
     
     parser.add_argument("--eval_max_steps", default=200, type=int, help="Max steps allowed in eval.")
 
@@ -104,12 +100,16 @@ def parse_args():
 if __name__ == "__main__":
 
     args = parse_args()
-    assert args.max_steps > 0, 'Should specify --max_steps'
     assert args.model_name, 'Should specify --model_name'
     assert args.from_ckpt > 0, 'Should specify --from_ckpt'
-    assert args.state_dim > 0, 'Should specify --state_dim'
 
     # Load the model.
+    path = os.path.join(MODEL_PATH, f'{args.model_name}/{args.from_ckpt}.pth')
+    print('Loaded ckpt from:', path)  
+    state_dict_from_ckpt = torch.load(path)['model']
+    state_dim = state_dict_from_ckpt['state_encoder.net.0.weight'].shape[1]
+    action_dim = state_dict_from_ckpt['action_encoder.net.0.weight'].shape[1]
+    max_timestep = state_dict_from_ckpt['global_pos_emb'].shape[1]
     conf = GPTConfig(
         args.context_length, 
         n_layer=args.n_layer, 
@@ -118,12 +118,10 @@ if __name__ == "__main__":
         model_type=args.model_type, 
         key_states=args.key_states,
         key_state_loss=args.key_state_loss,
-        max_timestep=args.max_steps,
+        max_timestep=max_timestep,
     )
-    model = GPTWithCoT(conf, state_dim=args.state_dim, action_dim=args.action_dim).cuda()
-    path = os.path.join(MODEL_PATH, f'{args.model_name}/{args.from_ckpt}.pth')
-    print('Loaded ckpt from:', path)  
-    model.load_state_dict(torch.load(path), strict=False) 
+    model = GPTWithCoT(conf, state_dim=state_dim, action_dim=action_dim).cuda()
+    model.load_state_dict(state_dict_from_ckpt, strict=False) 
     model.eval()
 
     # Load demos to fetch the env. seeds used in training.
