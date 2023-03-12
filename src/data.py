@@ -6,8 +6,8 @@ from torch.utils.data.dataset import Dataset
 from torch.nn.utils.rnn import pad_sequence
 import torch
 
-# Please specify the data path.
-DATA_PATH = '/home/zjia/Research/inter_seq/data/rigid_body_envs'  
+# Please specify the DATA_PATH (the base folder for storing data) in `path.py`.
+from path import DATA_PATH
 
 
 class MS2Demos(Dataset):
@@ -20,8 +20,8 @@ class MS2Demos(Dataset):
             min_seq_length=None,
             max_seq_length=None,
             with_key_states=False,
-            seed=None, # seed for train/test spliting.
-            duplicate=100):  # For faster data loading.  
+            multiplier=20,  # Used for faster data loading.
+            seed=None):  # seed for train/test spliting.
         super().__init__()
         self.task = task
         self.data_split = data_split
@@ -29,13 +29,14 @@ class MS2Demos(Dataset):
         self.min_seq_length = min_seq_length  # For sampling trajectories.
         self.max_seq_length = max_seq_length  # For sampling trajectories.
         self.with_key_states = with_key_states  # Whether output key states.
+        self.multiplier = multiplier
 
         # Usually set min and max traj length to be the same value.
         self.max_steps = -1  # Maximum timesteps across all trajectories.
         traj_path = os.path.join(DATA_PATH, 
             f'{task}/trajectory.{obs_mode}.{control_mode}.h5')
         print('Traj path:', traj_path)
-        self.data = self.load_demo_dataset(traj_path, length, duplicate)
+        self.data = self.load_demo_dataset(traj_path, length)
 
         # Cache key states for faster data loading.
         if self.with_key_states:
@@ -85,7 +86,7 @@ class MS2Demos(Dataset):
     def info(self):  # Get observation and action shapes.
         return self.data['obs'][0].shape[-1], self.data['actions'][0].shape[-1]
 
-    def load_demo_dataset(self, path, length, duplicate):  
+    def load_demo_dataset(self, path, length):  
         dataset = {}
         traj_all = h5py.File(path)
         if length == -1:
@@ -104,12 +105,10 @@ class MS2Demos(Dataset):
         else:
             ids = np.random.permutation(len(traj_all))[:length]
 
+        ids = ids.tolist() * self.multiplier  # Duplicate the data for faster loading.
+
         # Note that the size of `env_states` and `obs` is that of the others + 1.
         # And the `infos` is for the next obs rather than the current obs.
-
-        # Duplicate the dataset for faster data loading.
-        # In Pytorch, each initialization of the data loader have some overhead.
-        ids = ids.tolist() * duplicate
 
         # `env_states` is used for reseting the env (might be helpful for eval)
         dataset['env_states'] = [np.array(
@@ -228,7 +227,6 @@ if __name__ == "__main__":
     train_data = DataLoader(
         dataset=train_dataset, 
         batch_size=batch_size, 
-        shuffle=True, 
         collate_fn=collate_fn)
     
     data = next(iter(train_data))
