@@ -1,21 +1,30 @@
 import os
-import gym
-import torch
 import numpy as np
 import argparse
 from tqdm import tqdm
 from collections import defaultdict
 
 from mani_skill2.utils.io_utils import load_json
+import mani_skill2.envs  # Load ManiSkill2 envs.
+import torch  # Load pytorch after maniskill2 to avoid some import error.
 
-import mani_skill2.envs  # To load ManiSkill2 envs.
 from model import GPTConfig, GPTWithCoT
 
 from vec_env import get_mp_envs  # Used for parallel evaluation.
 
-# Please specify the model and data path (base folder).
-MODEL_PATH = '/home/zjia/Research/inter_seq/CoTPC/models'
-DATA_PATH = '/home/zjia/Research/inter_seq/data/rigid_body_envs'  
+try:
+    # Use might need this for wandb to work due to protobuf issues.
+    os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
+
+    import wandb
+    USE_WANDB = True
+    PROJECT_NAME = 'CoTPC'  # Please specify the project name.
+except ImportError:
+    print('Do not use wandb since it is not found.')
+    USE_WANDB = False
+
+# Please specify MODEL_PATH and DATA_PATH (both are base folders) in `path.py`.
+from path import MODEL_PATH, DATA_PATH
 
 
 @torch.no_grad()
@@ -75,21 +84,8 @@ def parse_args():
     parser.add_argument('--obs_mode', type=str, default='state', 
                         help="State mode used in envs from ManiSkill2.")
     parser.add_argument("--seed", default=0, type=int,help="Random seed for data spliting.")
-    parser.add_argument("--num_traj", default=-1, type=int, help="Number of training trajectories.")
 
     # Hyper-parameters regarding the model.
-    parser.add_argument('--context_length', type=int, default=60, 
-                        help="Context size of CoTPC.")
-    parser.add_argument("--n_layer", default=4, type=int, help="Number of attention layers.")
-    parser.add_argument("--n_head", default=8, type=int, help="Number of attention heads.")
-    parser.add_argument("--n_embd", default=128, type=int, help="Hidden feature dimension.")
-    parser.add_argument('--model_type', type=str, default='s+a+cot', 
-                        help="Model type for the CoTPC model (see GPTConfig).")
-    parser.add_argument('--key_states', type=str, default='a', 
-                        help="Which key states to use (see GPTConfig for the spec. format).")
-    parser.add_argument("--key_state_loss", default='', type=str, 
-                        help="Features out of what attention layers to use for key state prediction " +
-                        "losses (see GPTConfig for the spec. format).")
     parser.add_argument("--model_name", default='', type=str, help="Model name to be loaded.")
     parser.add_argument("--from_ckpt", default=-1, type=int, help="Ckpt of the model to be loaded.")
     
@@ -105,19 +101,21 @@ if __name__ == "__main__":
 
     # Load the model.
     path = os.path.join(MODEL_PATH, f'{args.model_name}/{args.from_ckpt}.pth')
-    print('Loaded ckpt from:', path)  
-    state_dict_from_ckpt = torch.load(path)['model']
+    ckpt = torch.load(path)
+    print('Loaded ckpt from:', path)
+
+    state_dict_from_ckpt, params = ckpt['model'], ckpt['metadata']
     state_dim = state_dict_from_ckpt['state_encoder.net.0.weight'].shape[1]
     action_dim = state_dict_from_ckpt['action_encoder.net.0.weight'].shape[1]
     max_timestep = state_dict_from_ckpt['global_pos_emb'].shape[1]
     conf = GPTConfig(
-        args.context_length, 
-        n_layer=args.n_layer, 
-        n_head=args.n_head, 
-        n_embd=args.n_embd, 
-        model_type=args.model_type, 
-        key_states=args.key_states,
-        key_state_loss=args.key_state_loss,
+        params['context_length'], 
+        n_layer=params['n_layer'], 
+        n_head=params['n_head'], 
+        n_embd=params['n_embd'], 
+        model_type=params['model_type'], 
+        key_states=params['key_states'],
+        key_state_loss=params['key_state_loss'],
         max_timestep=max_timestep,
     )
     model = GPTWithCoT(conf, state_dim=state_dim, action_dim=action_dim).cuda()
@@ -136,12 +134,18 @@ if __name__ == "__main__":
         length_all = len(json_data["episodes"])
         ids = []
         for i in range(10):  # Hard-code the 10 data splits for permutation.
-            t_ids = np.random.permutation(length_all//10)[:args.num_traj//10]
-            t_ids += i*length_all//10
+            t_ids = np.random.permutation(
+                length_all // 10)[:params['num_traj'] // 10]
+            t_ids += i * length_all // 10
             ids.append(t_ids)
         eval_ids = np.concatenate(ids)
     else:
-        eval_ids = np.random.permutation(len(json_data["episodes"]))[:args.num_traj]
+        eval_ids = np.random.permutation(
+            len(json_data["episodes"]))[:params['num_traj']]
+
+    if USE_WANDB:
+        wandb.init(project=PROJECT_NAME, name=f'eval/{args.model_name}', 
+                   id=f'wandb_id_{args.model_name}', resume='auto')
 
     # Number of parallel environments.
     n_env = 25
@@ -174,9 +178,9 @@ if __name__ == "__main__":
                 # You might want to use these additional metrics.         
                 # if args.task == 'PickCube-v0':
                 #     metric_dict['is_grasped'][j].append(info['is_grasped'])
-                # if args.task == 'StackCube-v0':
-                #     metric_dict['is_cubaA_grasped'][j].append(info['is_cubaA_grasped'])
-                #     metric_dict['is_cubeA_on_cubeB'][j].append(info['is_cubeA_on_cubeB'])
+                if args.task == 'StackCube-v0':
+                    metric_dict['is_cubaA_grasped'][j].append(info['is_cubaA_grasped'])
+                    metric_dict['is_cubeA_on_cubeB'][j].append(info['is_cubeA_on_cubeB'])
                 # if args.task == 'PegInsertionSide-v0':
                 #     metric_dict['is_grasped'][j].append(info['is_grasped'])
                 #     metric_dict['pre_inserted'][j].append(info['pre_inserted'])
@@ -184,14 +188,20 @@ if __name__ == "__main__":
                 #     metric_dict['is_contacted'][j].append(info['is_contacted'])
                 metric_dict['success'][j].append(info['success'])
             
-    output_str = ''
+    output_str, output_dict = '', dict()
     for k, v in metric_dict.items():
         v = np.mean([np.any(vv) for vv in v]) * 100
         output_str += f'{k} {v:.2f}, '
+        output_dict[k] = v
     output_str = output_str[:-2]
     print(output_str)
 
+    if USE_WANDB: 
+        output_dict['n_iter'] = args.from_ckpt
+        wandb.log(output_dict)
+
     # Example eval loop with a single env (not the paralleled VecEnv).
+    # import gym
     # env = gym.make('Some inputs here.')
     # s = env.reset()
     # state_hist, action_hist, t = [s], [], np.zeros([1])
