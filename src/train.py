@@ -135,8 +135,9 @@ if __name__ == "__main__":
     print('Training data size:', len(train_dataset))
     print('Max steps:', train_dataset.max_steps)
 
-    collate_fn = get_padding_fn(
-        ['k'] if 'cot' in args.model_type else [] + ['s', 'a', 't'])
+    input_dict = ['s', 'a', 't']
+    input_dict += ['k'] if 'cot' in args.model_type else [] 
+    collate_fn = get_padding_fn(input_dict)
     train_data = DataLoader(
         dataset=train_dataset, 
         batch_size=args.batch_size, 
@@ -249,12 +250,16 @@ if __name__ == "__main__":
                 avg_loss_key_states = np.mean(losses_key_states)
                 print(f'Iteration {idx}: {avg_loss_act_pred}, {avg_loss_key_states}')
                 f.write(f'{idx},{avg_loss_act_pred},{avg_loss_key_states}\n')
-                if USE_WANDB: wandb.log({
-                        "loss_actions": avg_loss_act_pred, 
-                        "loss_key_states": avg_loss_key_states,
-                        "loss_sum": avg_loss_act_pred + avg_loss_key_states,
-                        "n_iter": idx,
-                    })
+                if USE_WANDB: 
+                    log_dict = {
+                        'n_iter': idx,
+                        'loss_actions': avg_loss_act_pred,
+                        'loss_sum': avg_loss_act_pred,
+                    }
+                    if 'cot' in args.model_type:
+                        log_dict['loss_key_states'] = avg_loss_key_states
+                        log_dict['loss_sum'] = avg_loss_act_pred + avg_loss_key_states
+                    wandb.log(log_dict)
 
         if idx > 0 and idx % args.save_every == 0:
             save_path = os.path.join(model_path, f'{idx}.pth')
