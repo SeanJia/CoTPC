@@ -136,7 +136,7 @@ if __name__ == "__main__":
     print('Max steps:', train_dataset.max_steps)
 
     collate_fn = get_padding_fn(
-        ['s', 'a', 't'] + ['k'] if 'cot' in args.model_type else [])
+        ['k'] if 'cot' in args.model_type else [] + ['s', 'a', 't'])
     train_data = DataLoader(
         dataset=train_dataset, 
         batch_size=args.batch_size, 
