@@ -195,6 +195,7 @@ class BlocksWithCoT(nn.Module):
                 r = torch.randint(0, (T - self.len_key_states) // 2, [B])[:, None] * 2
             else:
                 r = torch.randint(0, T - self.len_key_states, [B])[:, None]
+            # When '+a', we always ignore the last action token (set mask=1).
             mask = torch.arange(0, T).repeat(B, 1) > r + self.len_key_states
             key_state_mask = torch.zeros(
                 [B, self.n_head, T, T], dtype=bool, device=x.device)
