@@ -145,7 +145,8 @@ if __name__ == "__main__":
         pin_memory=True,  # Faster data loading if using GPU.
         num_workers=args.num_workers,
         persistent_workers=True,  # Faster data loader resets.
-        collate_fn=collate_fn
+        collate_fn=collate_fn,
+        drop_last=True,
     )
     data_iter = iter(train_data)
 
