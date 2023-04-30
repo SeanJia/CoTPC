@@ -4,6 +4,25 @@ import numpy as np
 from multiprocessing import Pipe, Process
 import gym
 
+from transforms3d.euler import euler2quat
+from transforms3d.quaternions import qmult
+
+import sapien.core as sapien
+
+
+def disturb(env, kwargs):
+	if 'peg' in kwargs:
+		dx, dy, dr = kwargs['peg']
+		pose = env.peg.get_pose()
+		quat = euler2quat(0, 0, dr)
+		env.peg.set_pose(sapien.Pose(
+			p=pose.p+[dx,dy,0], q=qmult(quat, pose.q)))
+	if 'box' in kwargs:
+		dx, dy, dr = kwargs['box']
+		pose = env.box.get_pose()
+		quat = euler2quat(0, 0, dr)
+		env.box.set_pose(sapien.Pose(
+			p=pose.p+[dx,dy,0], q=qmult(quat, pose.q)))
 
 def get_mp_envs(env_id, n_env, start_idx=0, **env_kwargs):
     def env_fn(rank):
@@ -45,6 +64,8 @@ def worker(remote, parent_remote, env_fn):
 		elif cmd == 'close':
 			remote.close()
 			break
+		elif cmd == 'disturb':
+			disturb(env, data)
 		else:
 			raise NameError('NotImplentedError')
 
@@ -90,7 +111,11 @@ class VecEnv():
 		for remote, kwargs in zip(self.remotes, kwargs_list):
 			remote.send(('reset', kwargs))
 		return np.stack([remote.recv() for remote in self.remotes])
-	
+
+	def disturb(self, kwargs_list):
+		for remote, kwargs in zip(self.remotes, kwargs_list):
+			remote.send(('disturb', kwargs))
+
 	def close(self):
 		if self.closed:
 			return
