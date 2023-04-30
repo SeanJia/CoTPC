@@ -217,7 +217,7 @@ class GPTWithCoT(nn.Module):
     is specified as block_size, which does not count the key state query tokens. 
     """
 
-    def __init__(self, config, state_dim=-1, action_dim=-1):
+    def __init__(self, config, state_dim=-1, action_dim=-1, cot_decoder='256'):
         super().__init__()
 
         assert state_dim > 0 and action_dim > 0
@@ -229,6 +229,7 @@ class GPTWithCoT(nn.Module):
         self.key_state_loss = config.key_state_loss
         self.len_key_states = config.len_key_states
         self.block_size = config.block_size
+        self.cot_decoder = cot_decoder
 
         # Set up learnable position embedding synchronized for s and a tokens, as proposed
         # in Decision Transformer. We use a similar global+local position embedding design.
@@ -262,8 +263,9 @@ class GPTWithCoT(nn.Module):
         if 'cot' in self.model_type:
             key_state_predictors = []
             for _ in self.key_state_loss:
-                key_state_predictors.append(
-                    MLP(config.n_embd, self.state_dim, hidden_dims=[256]))
+                key_state_predictor = MLP(
+                    config.n_embd, self.state_dim, hidden_dims=[int(self.cot_decoder)])
+                key_state_predictors.append(key_state_predictor)
             # Register all the key state predictors.
             self.key_state_predictors = nn.ModuleList(key_state_predictors)  
 
@@ -323,10 +325,10 @@ class GPTWithCoT(nn.Module):
 
         if 'cot' in self.model_type:
             key_state_preds = []
-            for loss_layer in [int(c) for c in self.key_state_loss]:
-                key_state_preds.append(self.key_state_predictors[loss_layer](
-                    intermediate_feats[loss_layer][:,:self.len_key_states]))
-            
+            for idx, loss_layer_idx in enumerate([int(c) for c in self.key_state_loss]):
+                key_state_preds.append(self.key_state_predictors[idx](
+                    intermediate_feats[loss_layer_idx][:,:self.len_key_states]))
+                
             # Get rid of dims for key state query tokens.
             act_preds = torch.split(
                 act_preds, [self.len_key_states, self.block_size], dim=1)[1]
