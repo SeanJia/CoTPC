@@ -51,7 +51,8 @@ def parse_args():
     parser.add_argument("--key_state_loss", default='', type=str, 
                         help="Features out of what attention layers to use for key state prediction " +
                         "losses (see GPTConfig for the spec. format).")
-    
+    parser.add_argument('--cot_decoder', type=str, default='256', help="Specs of the CoT decoder.")
+
     # General hyper-parameters regarding model loading and saving
     parser.add_argument("--model_name", default='', type=str, help="Model name (for storing ckpts).")
     parser.add_argument("--from_model_name", default='', type=str, help="Name of the pretrained model.")
@@ -163,6 +164,7 @@ if __name__ == "__main__":
         embd_pdrop=float(args.dropout),
         resid_pdrop=float(args.dropout),
         attn_pdrop=float(args.dropout),
+        cot_decoder=args.cot_decoder,
     )
     model = GPTWithCoT(conf, state_dim=state_dim, action_dim=action_dim).cuda()
     optimizer = model.configure_adamw_optimizers({

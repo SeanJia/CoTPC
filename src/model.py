@@ -217,7 +217,7 @@ class GPTWithCoT(nn.Module):
     is specified as block_size, which does not count the key state query tokens. 
     """
 
-    def __init__(self, config, state_dim=-1, action_dim=-1, cot_decoder='256'):
+    def __init__(self, config, state_dim=-1, action_dim=-1):
         super().__init__()
 
         assert state_dim > 0 and action_dim > 0
@@ -229,7 +229,7 @@ class GPTWithCoT(nn.Module):
         self.key_state_loss = config.key_state_loss
         self.len_key_states = config.len_key_states
         self.block_size = config.block_size
-        self.cot_decoder = cot_decoder
+        self.cot_decoder = config.cot_decoder
 
         # Set up learnable position embedding synchronized for s and a tokens, as proposed
         # in Decision Transformer. We use a similar global+local position embedding design.
