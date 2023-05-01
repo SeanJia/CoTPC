@@ -6,7 +6,7 @@ Zhiwei Jia, Fangchen Liu, Vineet Thumuluri, Linghao Chen, Zhiao Huang, Hao Su<br
 UC San Diego, UC Berkeley, Zhejiang University<br>
 
 <p align="center">
-  <img src='github_teaser.png' width="500"/><br>
+  <img src='github_teaser.png' width="700"/><br>
   <a href="https://arxiv.org/abs/2304.00776">[arXiv]</a>&emsp;<a href="https://zjia.eng.ucsd.edu/cotpc">[website]</a>
 </p>
 
