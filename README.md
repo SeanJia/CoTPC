@@ -1,7 +1,7 @@
 # Chain-of-Thought Predictive Control (CoTPC)
 This is the official repository for CoTPC, a powerful hierarchical imitation learning model presented in the following paper:
 
-### **[Chain-of-Thought Predictive Control](https://zjia.eng.ucsd.edu/gsl)**<br>
+### **[Chain-of-Thought Predictive Control](https://zjia.eng.ucsd.edu/cotpc)**<br>
 Zhiwei Jia, Fangchen Liu, Vineet Thumuluri, Linghao Chen, Zhiao Huang, Hao Su<br>
 UC San Diego, UC Berkeley, Zhejiang University<br>
 
